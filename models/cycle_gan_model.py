@@ -1,14 +1,13 @@
 import torch
 import itertools
 from util.image_pool import ImagePool
-from base_model import BaseModel
-import networks
-from two_headed_unet import twoHeadedUNet
+from .base_model import BaseModel
+from . import networks
 
 
-class cosmosModel():
+class CycleGANModel(BaseModel):
     """
-    This class implements the COSMOS model, for learning image-to-image translation without paired data.
+    This class implements the CycleGAN model, for learning image-to-image translation without paired data.
 
     The model training requires '--dataset_mode unaligned' dataset.
     By default, it uses a '--netG resnet_9blocks' ResNet generator,
@@ -45,96 +44,59 @@ class cosmosModel():
 
         return parser
 
-    def __init__(self):
+    def __init__(self, opt):
         """Initialize the CycleGAN class.
 
         Parameters:
             opt (Option class)-- stores all the experiment flags; needs to be a subclass of BaseOptions
         """
-        # BaseModel.__init__(self, opt)
+        BaseModel.__init__(self, opt)
         # specify the training losses you want to print out. The training/test scripts will call <BaseModel.get_current_losses>
-        self.loss_names = ['D_A', 'G_A', 'cycle_A', 'idt_A','segA', 'D_B', 'G_B', 'cycle_B', 'idt_B','segB']
+        self.loss_names = ['D_A', 'G_A', 'cycle_A', 'idt_A', 'D_B', 'G_B', 'cycle_B', 'idt_B']
         # specify the images you want to save/display. The training/test scripts will call <BaseModel.get_current_visuals>
         visual_names_A = ['real_A', 'fake_B', 'rec_A']
         visual_names_B = ['real_B', 'fake_A', 'rec_B']
-        self.define_params()
-        if self.isTrain and self.lambda_identity > 0.0:  # if identity loss is used, we also visualize idt_B=G_A(B) ad idt_A=G_A(B)
+        if self.isTrain and self.opt.lambda_identity > 0.0:  # if identity loss is used, we also visualize idt_B=G_A(B) ad idt_A=G_A(B)
             visual_names_A.append('idt_B')
             visual_names_B.append('idt_A')
 
         self.visual_names = visual_names_A + visual_names_B  # combine visualizations for A and B
         # specify the models you want to save to the disk. The training/test scripts will call <BaseModel.save_networks> and <BaseModel.load_networks>.
         if self.isTrain:
-            self.model_names = ['G_A', 'G_B', 'D_A', 'D_B','segA','segB']
+            self.model_names = ['G_A', 'G_B', 'D_A', 'D_B']
         else:  # during test time, only load Gs
             self.model_names = ['G_A', 'G_B']
 
         # define networks (both Generators and discriminators)
         # The naming is different from those used in the paper.
         # Code (vs. paper): G_A (G), G_B (F), D_A (D_Y), D_B (D_X)
-        # self.netG_A = networks.define_G(opt.input_nc, opt.output_nc, opt.ngf, opt.netG, opt.norm,
-        #                                 not opt.no_dropout, opt.init_type, opt.init_gain, self.gpu_ids)
-        # self.netG_B = networks.define_G(opt.output_nc, opt.input_nc, opt.ngf, opt.netG, opt.norm,
-        #                                 not opt.no_dropout, opt.init_type, opt.init_gain, self.gpu_ids)
-        self.netG_A = twoHeadedUNet(n_channels = 1,bilinear = False)
-        self.netG_B = twoHeadedUNet(n_channels = 1,bilinear = False)
+        self.netG_A = networks.define_G(opt.input_nc, opt.output_nc, opt.ngf, opt.netG, opt.norm,
+                                        not opt.no_dropout, opt.init_type, opt.init_gain, self.gpu_ids)
+        self.netG_B = networks.define_G(opt.output_nc, opt.input_nc, opt.ngf, opt.netG, opt.norm,
+                                        not opt.no_dropout, opt.init_type, opt.init_gain, self.gpu_ids)
 
         if self.isTrain:  # define discriminators
-            self.netD_A = networks.define_D(self.output_nc, self.ndf, self.netD,
-                                            self.n_layers_D, self.norm, self.init_type, self.init_gain, self.gpu_ids)
-            self.netD_B = networks.define_D(self.input_nc, self.ndf, self.netD,
-                                            self.n_layers_D, self.norm, self.init_type, self.init_gain, self.gpu_ids)
+            self.netD_A = networks.define_D(opt.output_nc, opt.ndf, opt.netD,
+                                            opt.n_layers_D, opt.norm, opt.init_type, opt.init_gain, self.gpu_ids)
+            self.netD_B = networks.define_D(opt.input_nc, opt.ndf, opt.netD,
+                                            opt.n_layers_D, opt.norm, opt.init_type, opt.init_gain, self.gpu_ids)
 
         if self.isTrain:
-            if self.lambda_identity > 0.0:  # only works when input and output images have the same number of channels
-                assert(self.input_nc == self.output_nc)
-            self.fake_A_pool = ImagePool(self.pool_size)  # create image buffer to store previously generated images
-            self.fake_B_pool = ImagePool(self.pool_size)  # create image buffer to store previously generated images
+            if opt.lambda_identity > 0.0:  # only works when input and output images have the same number of channels
+                assert(opt.input_nc == opt.output_nc)
+            self.fake_A_pool = ImagePool(opt.pool_size)  # create image buffer to store previously generated images
+            self.fake_B_pool = ImagePool(opt.pool_size)  # create image buffer to store previously generated images
             # define loss functions
-            self.criterionGAN = networks.GANLoss(self.gan_mode).to(self.device)  # define GAN loss.
+            self.criterionGAN = networks.GANLoss(opt.gan_mode).to(self.device)  # define GAN loss.
             self.criterionCycle = torch.nn.L1Loss()
             self.criterionIdt = torch.nn.L1Loss()
             # initialize optimizers; schedulers will be automatically created by function <BaseModel.setup>.
-            self.optimizer_G = torch.optim.Adam(itertools.chain(self.netG_A.parameters(), self.netG_B.parameters()), lr=self.lr, betas=(self.beta1, 0.999))
-            self.optimizer_D = torch.optim.Adam(itertools.chain(self.netD_A.parameters(), self.netD_B.parameters()), lr=self.lr, betas=(self.beta1, 0.999))
+            self.optimizer_G = torch.optim.Adam(itertools.chain(self.netG_A.parameters(), self.netG_B.parameters()), lr=opt.lr, betas=(opt.beta1, 0.999))
+            self.optimizer_D = torch.optim.Adam(itertools.chain(self.netD_A.parameters(), self.netD_B.parameters()), lr=opt.lr, betas=(opt.beta1, 0.999))
             self.optimizers.append(self.optimizer_G)
             self.optimizers.append(self.optimizer_D)
 
-    def define_params(self):
-        self.lambda_A = 10.0
-        self.lambda_B = 10.0
-        self.lambda_identity = 0.5
-        self.isTrain = True
-        self.input_nc = 1
-        self.output_nc = 1
-        self.ndf = 64
-        self.ngf  = 64
-        self.netD = 'basic'
-        self.n_layers_D = 3
-        self.norm = 'instance'
-        self.init_type = 'normal'
-        self.init_gain = 0.02
-        self.gpu_ids = ''
-        self.pool_size = 50
-        self.gan_mode= 'lsgan'
-        self.lr = 0.0002
-        self.beta1 = 0.5
-        self.device = torch.device("mps")
-        self.optimizers = []
-
-
     def set_input(self, input):
-        # real_A -> segPredA -> labelA -> segLossA
-        # fake_B -> segPredB -> labelA -> segLossB
-
-        # In our case
-        # real_A -> segPredA -> labelA -> segLossA
-        # real_B -> segPredB -> labelB -> segLossB
-
-        # input: add label A/B
-        # network: add 2 encoders
-        # loss: add 4 segLoss: (real_A,labelA), (fakeB,labelA), (real_B,labelB), (fakeA,labelB),
-
         """Unpack input data from the dataloader and perform necessary pre-processing steps.
 
         Parameters:
@@ -142,18 +104,17 @@ class cosmosModel():
 
         The option 'direction' can be used to swap domain A and domain B.
         """
-        AtoB = True
-        # input is a dictionary that contains a pair of A-B images (a set maybe?)
-        self.real_A = input['A' if AtoB else 'B']['image'].to(self.device)
-        self.real_B = input['B' if AtoB else 'A']['image'].to(self.device)
-        # self.image_paths = input['A_paths' if AtoB else 'B_paths']
+        AtoB = self.opt.direction == 'AtoB'
+        self.real_A = input['A' if AtoB else 'B'].to(self.device)
+        self.real_B = input['B' if AtoB else 'A'].to(self.device)
+        self.image_paths = input['A_paths' if AtoB else 'B_paths']
 
     def forward(self):
         """Run forward pass; called by both functions <optimize_parameters> and <test>."""
-        self.fake_B, self.real_A_seg = self.netG_A(self.real_A)  # G_A(A)
-        self.rec_A, self.fake_B_seg = self.netG_B(self.fake_B)   # G_B(G_A(A))
-        self.fake_A, self.real_B_seg = self.netG_B(self.real_B)  # G_B(B)
-        self.rec_B, self.fake_A_seg = self.netG_A(self.fake_A)   # G_A(G_B(B))
+        self.fake_B = self.netG_A(self.real_A)  # G_A(A)
+        self.rec_A = self.netG_B(self.fake_B)   # G_B(G_A(A))
+        self.fake_A = self.netG_B(self.real_B)  # G_B(B)
+        self.rec_B = self.netG_A(self.fake_A)   # G_A(G_B(B))
 
     def backward_D_basic(self, netD, real, fake):
         """Calculate GAN loss for the discriminator
@@ -170,8 +131,6 @@ class cosmosModel():
         pred_real = netD(real)
         loss_D_real = self.criterionGAN(pred_real, True)
         # Fake
-        # detaches tensor from computational graph cuz no more gradient computation depends on it
-        # This means gradient does not propagate further into the generator (avoid training D)
         pred_fake = netD(fake.detach())
         loss_D_fake = self.criterionGAN(pred_fake, False)
         # Combined loss and calculate gradients
@@ -216,7 +175,6 @@ class cosmosModel():
         self.loss_cycle_B = self.criterionCycle(self.rec_B, self.real_B) * lambda_B
         # combined loss and calculate gradients
         self.loss_G = self.loss_G_A + self.loss_G_B + self.loss_cycle_A + self.loss_cycle_B + self.loss_idt_A + self.loss_idt_B
-        # D params not updated because we only take a step() using G's optimizer
         self.loss_G.backward()
 
     def optimize_parameters(self):
