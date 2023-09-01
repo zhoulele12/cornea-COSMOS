@@ -19,26 +19,38 @@ See training and test tips at: https://github.com/junyanz/pytorch-CycleGAN-and-p
 See frequently asked questions at: https://github.com/junyanz/pytorch-CycleGAN-and-pix2pix/blob/master/docs/qa.md
 """
 import time
-# from options.train_options import TrainOptions
-from data import create_dataset
+
+import torch
+# from torchinfo import summary
+
 # from models import create_model
 # from util.visualizer import Visualizer
 from COSMOS import cosmosModel
+# from options.train_options import TrainOptions
+from data import create_dataset
 
 if __name__ == '__main__':
     epoch_count = 0
-    n_epochs = 10
+    n_epochs = 500
     n_epochs_decay = 0
     print_freq = 50
-    batch_size = 32
+    save_epoch_freq = 5
+    batch_size = 1
 
     # opt = TrainOptions().parse()   # get training options
-    dataset = create_dataset()  # create a dataset given opt.dataset_mode and other options
+    dataset = create_dataset(batch_size)  # create a dataset given opt.dataset_mode and other options
     dataset_size = len(dataset)    # get the number of images in the dataset.
     print('The number of training images = %d' % dataset_size)
 
     # model = create_model(opt)      # create a model given opt.model and other options
+    device = torch.device("cuda")
     model = cosmosModel()
+    def count_parameters(model):
+        return sum(p.numel() for p in model.parameters() if p.requires_grad)
+    print('num_of_params = ', count_parameters(model))
+    model.to(device)
+
+    # summary(model, input_size=(batch_size, 1, 28, 28),device='cpu')
     # model.setup(opt)               # regular setup: load and print networks; create schedulers
     # visualizer = Visualizer(opt)   # create a visualizer that display/save images and plots
     total_iters = 0                # the total number of training iterations
@@ -50,26 +62,30 @@ if __name__ == '__main__':
         # visualizer.reset()              # reset the visualizer: make sure it saves the results to HTML at least once every epoch
         # model.update_learning_rate()    # update learning rates in the beginning of every epoch.
         for i, data in enumerate(dataset):  # inner loop within one epoch
+            # print(data['A']['image'].size())
+            # print(data['A']['mask'].size())
+            # print(data['B']['image'].size())
             iter_start_time = time.time()  # timer for computation per iteration
             if total_iters % print_freq == 0:
                 t_data = iter_start_time - iter_data_time
-
             total_iters += batch_size
             epoch_iter += batch_size
             model.set_input(data)         # unpack data from dataset and apply preprocessing
+
             model.optimize_parameters()   # calculate loss functions, get gradients, update network weights
+            # print(torch.cuda.memory_summary(device=device, abbreviated=False))
 
             # if total_iters % opt.display_freq == 0:   # display images on visdom and save images to a HTML file
             #     save_result = total_iters % opt.update_html_freq == 0
             #     model.compute_visuals()
             #     visualizer.display_current_results(model.get_current_visuals(), epoch, save_result)
             #
-            # if total_iters % opt.print_freq == 0:    # print training losses and save logging information to the disk
-            #     losses = model.get_current_losses()
-            #     t_comp = (time.time() - iter_start_time) / opt.batch_size
-            #     visualizer.print_current_losses(epoch, epoch_iter, losses, t_comp, t_data)
-            #     if opt.display_id > 0:
-            #         visualizer.plot_current_losses(epoch, float(epoch_iter) / dataset_size, losses)
+            if total_iters % print_freq == 0:    # print training losses and save logging information to the disk
+                losses = model.get_current_losses()
+                t_comp = (time.time() - iter_start_time) / batch_size
+                print('iteration',i)
+                print(losses)
+
 
             # if total_iters % opt.save_latest_freq == 0:   # cache our latest model every <save_latest_freq> iterations
             #     print('saving the latest model (epoch %d, total_iters %d)' % (epoch, total_iters))
@@ -77,9 +93,8 @@ if __name__ == '__main__':
             #     model.save_networks(save_suffix)
 
             iter_data_time = time.time()
-        # if epoch % opt.save_epoch_freq == 0:              # cache our model every <save_epoch_freq> epochs
-        #     print('saving the model at the end of epoch %d, iters %d' % (epoch, total_iters))
-        #     model.save_networks('latest')
-        #     model.save_networks(epoch)
-
+        if epoch % save_epoch_freq == 0:              # cache our model every <save_epoch_freq> epochs
+            print('saving the model at the end of epoch %d, iters %d' % (epoch, total_iters))
+            # model.save_networks('latest')
+            model.save_networks(epoch)
         # print('End of epoch %d / %d \t Time Taken: %d sec' % (epoch, opt.n_epochs + opt.n_epochs_decay, time.time() - epoch_start_time))

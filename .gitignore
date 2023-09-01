@@ -5,6 +5,7 @@ checkpoints/
 *.jpg
 *.tif
 *.gif
+*.png
 
 venv/
 .idea/

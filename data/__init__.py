@@ -47,7 +47,7 @@ def get_option_setter(dataset_name):
     return dataset_class.modify_commandline_options
 
 
-def create_dataset():
+def create_dataset(batch_size):
     """Create a dataset given the option.
 
     This function wraps the class CustomDatasetDataLoader.
@@ -57,7 +57,7 @@ def create_dataset():
         >>> from data import create_dataset
         >>> dataset = create_dataset()
     """
-    data_loader = CustomDatasetDataLoader()
+    data_loader = CustomDatasetDataLoader(batch_size=batch_size)
     dataset = data_loader.load_data()
     return dataset
 
@@ -65,7 +65,7 @@ def create_dataset():
 class CustomDatasetDataLoader():
     """Wrapper class of Dataset class that performs multi-threaded data loading"""
 
-    def __init__(self):
+    def __init__(self,batch_size):
         """Initialize this class
 
         Step 1: create a dataset instance given the name [dataset_mode]
@@ -75,6 +75,7 @@ class CustomDatasetDataLoader():
         # dataset_class = find_dataset_using_name(opt.dataset_mode)
         # self.dataset = dataset_class(opt)
         # print("dataset [%s] was created" % type(self.dataset).__name__)
+        self.batch_size = batch_size
         transform_A = transforms.Compose([
             transforms.Grayscale(),
             transforms.Resize((256, 256)),
@@ -89,20 +90,18 @@ class CustomDatasetDataLoader():
         self.dataset = CustomDataset(root_dir_A='train/HE', root_dir_B='train/BlueWhite', transform_A=transform_A,
                                 transform_B=transform_B)
         # Create the dataloader
-        self.dataloader = DataLoader(self.dataset, batch_size=32, shuffle=True)
+        self.dataloader = DataLoader(self.dataset, batch_size=self.batch_size, shuffle=True)
 
     def load_data(self):
         return self
 
     def __len__(self):
         """Return the number of data in the dataset"""
-        return min(len(self.dataset), 99999999)
+        return len(self.dataset)
 
     def __iter__(self):
         """Return a batch of data"""
         for i, data in enumerate(self.dataloader):
-            if i * 32 >= 99999999:
-                break
             yield data
 
 class CustomDataset(Dataset):
@@ -120,6 +119,7 @@ class CustomDataset(Dataset):
                 mask_name = base_name + '.jpg'
                 if os.path.isfile(os.path.join(root_dir_A, 'masks', mask_name)):
                     self.images_A.append(image_name)
+
                     self.masks_A.append(mask_name)
 
         self.images_B = [f for f in os.listdir(root_dir_B) if 'Image' in f]
@@ -127,7 +127,7 @@ class CustomDataset(Dataset):
 
 
     def __len__(self):
-        return max(len(self.images_A), len(self.images_B))
+        return len(self.images_A)+ len(self.images_B)
 
     def __getitem__(self, idx):
         img_name_A = os.path.join(self.root_dir_A, 'images', self.images_A[idx % len(self.images_A)])
