@@ -16,7 +16,7 @@ if __name__ == '__main__':
     model = cosmosModel()
     model.to(device)
     model.eval()
-    model.load_networks(50,'Sep1st')
+    model.load_networks(300,'Sep2nd')
     # summary(model, input_size=(batch_size, 1, 28, 28),device='cpu')
     # model.setup(opt)               # regular setup: load and print networks; create schedulers
     # visualizer = Visualizer(opt)   # create a visualizer that display/save images and plots
@@ -29,9 +29,9 @@ if __name__ == '__main__':
         model.set_input(data)         # unpack data from dataset and apply preprocessing
         model.forward()
         save_image(model.real_A_image,'test_out/test%drealA.png'%i)
-        save_image(model.fake_B,'test_out/test%dfakeB.png'%i)
+        save_image(model.real_A_seg,'test_out/test%dsegA.png'%i)
         save_image(model.real_B_image, 'test_out/test%drealB.png'%i)
-        save_image(model.fake_A, 'test_out/test%dfakeA.png'%i)
+        save_image(model.real_B_seg, 'test_out/test%dsegB.png'%i)
 
 
     # print('End of epoch %d / %d \t Time Taken: %d sec' % (epoch, opt.n_epochs + opt.n_epochs_decay, time.time() - epoch_start_time))

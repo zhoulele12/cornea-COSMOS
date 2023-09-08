@@ -239,6 +239,9 @@ class cosmosModel(torch.nn.Module):
         self.backward_G()             # calculate gradients for G_A and G_B
         self.optimizer_G.step()       # update G_A and G_B's weights
         # D_A and D_B
+        # G not frozen here? not needed cuz D and G are two separate networks here.
+        # also the freezing above is more for speed rather than correctness.
+        # Since optimizer G only includes weights from G, it only updates G weights anyway
         self.set_requires_grad([self.netD_A, self.netD_B], True)
         self.optimizer_D.zero_grad()   # set D_A and D_B's gradients to zero
         self.backward_D_A()      # calculate gradients for D_A

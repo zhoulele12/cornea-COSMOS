@@ -11,6 +11,8 @@ Now you can use the dataset class by specifying flag '--dataset_mode dummy'.
 See our template dataset class 'template_dataset.py' for more details.
 """
 import importlib
+
+import torch
 from torch.utils.data import Dataset, DataLoader
 from data.base_dataset import BaseDataset
 from PIL import Image
@@ -61,6 +63,11 @@ def create_dataset(batch_size):
     dataset = data_loader.load_data()
     return dataset
 
+def binarize_tensor(tensor):
+    tensor[tensor < 0.5] = 0
+    tensor[tensor >= 0.5] = 1
+    return tensor
+
 
 class CustomDatasetDataLoader():
     """Wrapper class of Dataset class that performs multi-threaded data loading"""
@@ -75,20 +82,34 @@ class CustomDatasetDataLoader():
         # dataset_class = find_dataset_using_name(opt.dataset_mode)
         # self.dataset = dataset_class(opt)
         # print("dataset [%s] was created" % type(self.dataset).__name__)
+        binarize_transform = transforms.Lambda(binarize_tensor)
         self.batch_size = batch_size
         transform_A = transforms.Compose([
             transforms.Grayscale(),
             transforms.Resize((256, 256)),
             transforms.ToTensor(),
         ])
-
-        transform_B = transforms.Compose([
+        transform_A_mask = transforms.Compose([
+            transforms.Grayscale(),
             transforms.Resize((256, 256)),
             transforms.ToTensor(),
+            binarize_transform
         ])
 
-        self.dataset = CustomDataset(root_dir_A='train/HE', root_dir_B='train/BlueWhite', transform_A=transform_A,
-                                transform_B=transform_B)
+        transform_B = transforms.Compose([
+            transforms.Grayscale(),
+            transforms.Resize((256, 256)),
+            transforms.ToTensor()
+        ])
+        transform_B_mask = transforms.Compose([
+            transforms.Grayscale(),
+            transforms.Resize((256, 256)),
+            transforms.ToTensor(),
+            binarize_transform
+        ])
+
+        self.dataset = CustomDataset(root_dir_A='train/HE', root_dir_B='train/BlueWhite', transform_A=transform_A,transform_A_mask=transform_A_mask,
+                                transform_B=transform_B,transform_B_mask=transform_B_mask)
         # Create the dataloader
         self.dataloader = DataLoader(self.dataset, batch_size=self.batch_size, shuffle=True)
 
@@ -105,11 +126,13 @@ class CustomDatasetDataLoader():
             yield data
 
 class CustomDataset(Dataset):
-    def __init__(self, root_dir_A, root_dir_B, transform_A=None, transform_B=None):
+    def __init__(self, root_dir_A, root_dir_B, transform_A=None, transform_B=None,transform_A_mask=None, transform_B_mask=None):
         self.root_dir_A = root_dir_A
         self.root_dir_B = root_dir_B
         self.transform_A = transform_A
         self.transform_B = transform_B
+        self.transform_A_mask = transform_A
+        self.transform_B_mask = transform_B
 
         self.images_A = []
         self.masks_A = []
@@ -119,7 +142,6 @@ class CustomDataset(Dataset):
                 mask_name = base_name + '.jpg'
                 if os.path.isfile(os.path.join(root_dir_A, 'masks', mask_name)):
                     self.images_A.append(image_name)
-
                     self.masks_A.append(mask_name)
 
         self.images_B = [f for f in os.listdir(root_dir_B) if 'Image' in f]
@@ -144,11 +166,12 @@ class CustomDataset(Dataset):
 
         if self.transform_A:
             image_A = self.transform_A(image_A)
-            mask_A = self.transform_A(mask_A)
+            mask_A = self.transform_A_mask(mask_A)
 
         if self.transform_B:
             image_B = self.transform_B(image_B)
-            mask_B = self.transform_B(mask_B)
+            mask_B = self.transform_B_mask(mask_B)
+
 
         sample = {'A': {'image': image_A, 'mask': mask_A},
                   'B': {'image': image_B, 'mask': mask_B}}

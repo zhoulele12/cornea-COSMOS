@@ -34,8 +34,8 @@ if __name__ == '__main__':
     n_epochs = 500
     n_epochs_decay = 0
     print_freq = 50
-    save_epoch_freq = 5
-    batch_size = 1
+    save_epoch_freq = 10
+    batch_size = 2
 
     # opt = TrainOptions().parse()   # get training options
     dataset = create_dataset(batch_size)  # create a dataset given opt.dataset_mode and other options
@@ -62,9 +62,6 @@ if __name__ == '__main__':
         # visualizer.reset()              # reset the visualizer: make sure it saves the results to HTML at least once every epoch
         # model.update_learning_rate()    # update learning rates in the beginning of every epoch.
         for i, data in enumerate(dataset):  # inner loop within one epoch
-            # print(data['A']['image'].size())
-            # print(data['A']['mask'].size())
-            # print(data['B']['image'].size())
             iter_start_time = time.time()  # timer for computation per iteration
             if total_iters % print_freq == 0:
                 t_data = iter_start_time - iter_data_time
